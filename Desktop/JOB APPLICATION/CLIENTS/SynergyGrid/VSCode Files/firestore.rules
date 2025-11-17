@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  // Only authenticated users on the shared workspace account may touch the Firestore document
+  // that stores the entire workspace snapshot.
+  match /databases/{database}/documents {
+    function isSharedWorkspaceUser() {
+      return request.auth != null
+        && request.auth.token.email == 'synergygridllc@gmail.com'
+        && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    match /workspaces/{workspaceId} {
+      allow read, write: if isSharedWorkspaceUser();
+    }
+  }
+}
