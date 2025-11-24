@@ -1,14 +1,11 @@
-﻿import * as admin from 'firebase-admin';
-import * as functions from 'firebase-functions/v1';
-import axios from 'axios';
+﻿import axios from 'axios';
 import * as cheerio from 'cheerio';
 import currency from 'currency.js';
 import { DateTime } from 'luxon';
 import { createHash } from 'node:crypto';
+import { google, sheets_v4 } from 'googleapis';
 
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
+import type { JWT } from 'google-auth-library';
 
 type CurrencyCode = 'NGN' | 'USD';
 type KnownLocation =
@@ -24,7 +21,7 @@ type KnownLocation =
 type BuildingType = 'multipurpose' | 'hotel' | 'apartment' | 'other';
 type FeasibilityTag = 'strong_candidate' | 'needs_review' | 'low_priority';
 
-interface ScrapeSource {
+type ScrapeSource = {
   id: string;
   label: string;
   entryUrls: string[];
@@ -39,9 +36,9 @@ interface ScrapeSource {
     description?: string;
   };
   locationHints: KnownLocation[];
-}
+};
 
-interface ParsedListing {
+type ParsedListing = {
   sourceId: string;
   sourceLabel: string;
   url: string;
@@ -52,9 +49,9 @@ interface ParsedListing {
   unitText?: string;
   locationText?: string;
   typeText?: string;
-}
+};
 
-interface NormalizedListing {
+type NormalizedListing = {
   hash: string;
   sourceId: string;
   sourceLabel: string;
@@ -76,17 +73,29 @@ interface NormalizedListing {
   unitSourceText?: string;
   flags: string[];
   rawSnippet: string;
-}
+};
 
-interface MonetaryValue {
+type MonetaryValue = {
   amount: number;
   currency: CurrencyCode;
   sourceText: string;
-}
+};
+
+type RunResult = {
+  runId: string;
+  listings: NormalizedListing[];
+  errors: string[];
+};
 
 const RENT_BASELINE = 1_000_000; // ₦1M yearly per tenant benchmark
 const DEFAULT_UNIT_HINT = 100;
 const USER_AGENT = 'AfriscanPropertyFinderBot/0.1 (+contact owner)';
+const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const SHEET_ID = process.env.GOOGLE_SHEETS_ID;
+const LISTINGS_RANGE = process.env.GOOGLE_SHEETS_LISTINGS_RANGE ?? 'Listings!A1';
+const RUNS_RANGE = process.env.GOOGLE_SHEETS_RUNS_RANGE ?? 'Runs!A1';
+const SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+const SERVICE_ACCOUNT_KEY = process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.replace(/\\n/g, '\n');
 
 const SCRAPE_SOURCES: ScrapeSource[] = [
   {
@@ -130,9 +139,48 @@ const LOCATION_ALIASES: Record<KnownLocation, RegExp[]> = {
   Marrakesh: [/marrakech|marrakesh/i],
 };
 
+const SHEET_HEADERS = [
+  'Hash',
+  'Source',
+  'Title',
+  'URL',
+  'Price',
+  'Price Currency',
+  'Rent',
+  'Rent Currency',
+  'Units',
+  'Building Type',
+  'Location',
+  'Annual Revenue',
+  'ROI',
+  'Payback Years',
+  'Feasibility',
+  'Price Source',
+  'Rent Source',
+  'Unit Source',
+  'Flags',
+  'Captured At',
+];
+
+async function getSheetsClient(): Promise<sheets_v4.Sheets> {
+  if (!SHEET_ID) {
+    throw new Error('GOOGLE_SHEETS_ID env var is required');
+  }
+  if (!SERVICE_ACCOUNT_EMAIL || !SERVICE_ACCOUNT_KEY) {
+    throw new Error('Service account credentials are missing');
+  }
+  const auth: JWT = new google.auth.JWT({
+    email: SERVICE_ACCOUNT_EMAIL,
+    key: SERVICE_ACCOUNT_KEY,
+    scopes: [SHEETS_SCOPE],
+  });
+  await auth.authorize();
+  return google.sheets({ version: 'v4', auth });
+}
+
 function sanitizeNumber(text?: string | null): number | null {
   if (!text) return null;
-  const normalized = text.replace(/[,\s]/g, '');
+  const normalized = text.replace(/[\s,]/g, '');
   const num = Number(normalized);
   if (Number.isNaN(num)) return null;
   return num;
@@ -161,7 +209,7 @@ function parseMonetaryValue(text?: string | null): MonetaryValue | null {
   const multiplier = magnitudeSuffix ? parseMagnitude(magnitudeSuffix) : 1;
   const base = sanitizeNumber(numericPortion);
   if (base === null) return null;
-  const amount = currency(Number(base).valueOf()).multiply(multiplier).value;
+  const amount = currency(Number(base)).multiply(multiplier).value;
   return {
     amount,
     currency: currencyCode,
@@ -215,9 +263,7 @@ function evaluateFeasibility(paybackYears?: number | null): FeasibilityTag {
 }
 
 function buildListingHash(sourceId: string, url: string, title?: string): string {
-  return createHash('sha256')
-    .update(`${sourceId}|${url}|${title ?? ''}`)
-    .digest('hex');
+  return createHash('sha256').update(`${sourceId}|${url}|${title ?? ''}`).digest('hex');
 }
 
 function normalizeListing(parsed: ParsedListing): NormalizedListing {
@@ -279,29 +325,6 @@ function normalizeListing(parsed: ParsedListing): NormalizedListing {
   };
 }
 
-async function persistNormalizedListing(listing: NormalizedListing, runId: string): Promise<void> {
-  const db = admin.firestore();
-  const timestamp = DateTime.utc().toISO();
-  await db.collection('listings_processed').doc(listing.hash).set(
-    {
-      ...listing,
-      runId,
-      updatedAt: timestamp,
-    },
-    { merge: true }
-  );
-  await db.collection('listings_raw').doc(listing.hash).set(
-    {
-      sourceId: listing.sourceId,
-      url: listing.url,
-      rawSnippet: listing.rawSnippet,
-      runId,
-      updatedAt: timestamp,
-    },
-    { merge: true }
-  );
-}
-
 async function crawlSource(source: ScrapeSource): Promise<ParsedListing[]> {
   const listings: ParsedListing[] = [];
   for (const url of source.entryUrls) {
@@ -343,67 +366,112 @@ async function crawlSource(source: ScrapeSource): Promise<ParsedListing[]> {
   return listings;
 }
 
-async function runScrape(triggeredBy: string) {
-  const db = admin.firestore();
-  const runRef = db.collection('scrape_runs').doc();
-  const runId = runRef.id;
-  const startedAt = DateTime.utc().toISO();
-  await runRef.set({
-    status: 'running',
-    triggeredBy,
-    startedAt,
-    totalSources: SCRAPE_SOURCES.length,
+async function persistToSheets(listings: NormalizedListing[], runMeta: {
+  runId: string;
+  startedAt: string;
+  completedAt: string;
+  triggeredBy: string;
+  errors: string[];
+}): Promise<void> {
+  const sheets = await getSheetsClient();
+  const timestamp = DateTime.utc().toISO();
+  const listingRows = [
+    SHEET_HEADERS,
+    ...listings.map((listing) => [
+      listing.hash,
+      `${listing.sourceLabel} (${listing.sourceId})`,
+      listing.title ?? 'Untitled property',
+      listing.url,
+      listing.priceValue ?? '',
+      listing.priceCurrency ?? '',
+      listing.rentPerUnit ?? '',
+      listing.rentCurrency ?? '',
+      listing.unitCount ?? '',
+      listing.buildingType,
+      listing.location ?? '',
+      listing.annualRevenue ?? '',
+      listing.roiRatio ?? '',
+      listing.paybackYears ?? '',
+      listing.feasibility,
+      listing.priceSourceText ?? '',
+      listing.rentSourceText ?? '',
+      listing.unitSourceText ?? '',
+      listing.flags.join(', '),
+      timestamp,
+    ]),
+  ];
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID!,
+    range: LISTINGS_RANGE,
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: listingRows,
+    },
   });
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID!,
+    range: RUNS_RANGE,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: [
+        [
+          runMeta.runId,
+          runMeta.triggeredBy,
+          runMeta.startedAt,
+          runMeta.completedAt,
+          listings.length,
+          runMeta.errors.length,
+          runMeta.errors.join('; '),
+        ],
+      ],
+    },
+  });
+}
+
+export async function runScrape(triggeredBy = 'manual'): Promise<RunResult> {
+  const runId = createHash('md5').update(`${triggeredBy}-${Date.now()}`).digest('hex');
+  const startedAt = DateTime.utc().toISO();
   const normalizedListings: NormalizedListing[] = [];
   const errors: string[] = [];
+
   for (const source of SCRAPE_SOURCES) {
     try {
       const parsedListings = await crawlSource(source);
       for (const parsed of parsedListings) {
         const normalized = normalizeListing(parsed);
         normalizedListings.push(normalized);
-        await persistNormalizedListing(normalized, runId);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       errors.push(`${source.id}: ${message}`);
     }
   }
+
   const completedAt = DateTime.utc().toISO();
-  await runRef.set(
-    {
-      status: 'completed',
-      completedAt,
-      processedListings: normalizedListings.length,
-      errorCount: errors.length,
-      errors,
-    },
-    { merge: true }
-  );
-  return { runId, normalizedListings, errors };
+  await persistToSheets(normalizedListings, {
+    runId,
+    startedAt,
+    completedAt,
+    triggeredBy,
+    errors,
+  });
+
+  return { runId, listings: normalizedListings, errors };
 }
 
-export const fetchPropertyListings = functions
-  .runWith({ timeoutSeconds: 540, memory: '1GB' })
-  .https.onRequest(async (req: functions.https.Request, res: functions.Response<any>) => {
-    try {
-      const triggeredBy = (req.body && req.body.triggeredBy) || 'manual';
-      const result = await runScrape(triggeredBy);
-      res.status(200).json({
-        runId: result.runId,
-        listings: result.normalizedListings,
-        errorCount: result.errors.length,
-        errors: result.errors,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ error: message });
-    }
-  });
-
-export const scheduledPropertyRefresh = functions.pubsub
-  .schedule('0 4 * * *')
-  .timeZone('UTC')
-  .onRun(async () => {
-    await runScrape('scheduler');
-  });
+if (require.main === module) {
+  runScrape()
+    .then((result) => {
+      console.info(`Scrape run ${result.runId} captured ${result.listings.length} listings.`);
+      if (result.errors.length) {
+        console.warn('Errors:', result.errors);
+      }
+    })
+    .catch((error) => {
+      console.error('Scrape failed:', error);
+      process.exitCode = 1;
+    });
+}
