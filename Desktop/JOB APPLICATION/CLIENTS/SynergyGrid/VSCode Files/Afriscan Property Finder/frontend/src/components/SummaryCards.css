@@ -1,0 +1,25 @@
+﻿.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.summary-cards article {
+  background: var(--surface);
+  border-radius: 18px;
+  padding: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.summary-cards h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.summary-cards p {
+  margin: 0.5rem 0 0;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}

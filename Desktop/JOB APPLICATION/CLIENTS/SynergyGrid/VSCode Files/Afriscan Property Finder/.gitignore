@@ -1,0 +1,25 @@
+﻿# Node artifacts
+node_modules/
+**/node_modules/
+
+# Build outputs
+frontend/dist/
+backend/functions/lib/
+
+# Env / secrets
+*.env
+.env*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Firebase / tooling
+.firebaserc
+.firebase/
+
+# macOS/Windows noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,40 @@
+﻿.app-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem clamp(1rem, 4vw, 3rem) 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+header .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 2.8rem);
+}
+
+header .subtitle {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+}
+
+.error-banner {
+  background: rgba(244, 130, 130, 0.15);
+  color: #912020;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+}
+
+@media (max-width: 768px) {
+  .scrape-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

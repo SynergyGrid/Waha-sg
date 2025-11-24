@@ -1,0 +1,94 @@
+﻿.table-wrapper {
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 1rem;
+  box-shadow: var(--shadow-soft);
+  overflow-x: auto;
+}
+
+.table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-wrapper th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.75rem;
+}
+
+.table-wrapper td {
+  padding: 0.9rem 0.75rem;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.title-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.title-cell a {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--text-strong);
+}
+
+.title-cell a:hover {
+  text-decoration: underline;
+}
+
+.meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.roi {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+}
+
+.roi span {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.badge {
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.badge.strong_candidate {
+  background: rgba(94, 163, 110, 0.15);
+  color: #3a7f4a;
+}
+
+.badge.needs_review {
+  background: rgba(248, 198, 114, 0.2);
+  color: #9a6a1c;
+}
+
+.badge.low_priority {
+  background: rgba(244, 130, 130, 0.18);
+  color: #a63b3b;
+}
+
+.table-wrapper button {
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  color: var(--text-strong);
+}
+
+.table-wrapper .empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}

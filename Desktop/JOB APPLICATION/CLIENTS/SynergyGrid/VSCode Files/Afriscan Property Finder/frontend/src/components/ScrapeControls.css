@@ -1,0 +1,47 @@
+﻿.scrape-controls {
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.scrape-controls h2 {
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.scrape-controls p {
+  margin: 0.25rem 0;
+  color: var(--text-muted);
+}
+
+.scrape-status {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.scrape-controls .primary {
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.scrape-controls .primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scrape-controls .primary:not(:disabled):hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}

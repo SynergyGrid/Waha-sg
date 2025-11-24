@@ -1,0 +1,16 @@
+{
+  "name": "afriscan-property-finder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Afriscan Property Finder monorepo hosting the web UI and serverless scraping backend.",
+  "workspaces": [
+    "frontend",
+    "backend/functions"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:frontend": "npm run dev -w frontend",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}
