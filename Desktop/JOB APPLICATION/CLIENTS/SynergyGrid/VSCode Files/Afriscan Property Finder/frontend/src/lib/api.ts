@@ -1,6 +1,8 @@
 ﻿import type { PropertyFilters, PropertyRecord, ScrapeStatus } from '../types/property';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined;
+const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined;
+const SHOULD_USE_MOCK = RAW_API_BASE_URL === 'mock';
+const API_BASE_URL = SHOULD_USE_MOCK ? undefined : RAW_API_BASE_URL ?? '/api';
 
 const mockProperties: PropertyRecord[] = [
   {
@@ -77,7 +79,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export async function fetchProperties(filters?: Partial<PropertyFilters>): Promise<PropertyRecord[]> {
-  if (!API_BASE_URL) {
+  if (SHOULD_USE_MOCK) {
     return mockProperties.filter((property) => {
       if (filters?.location && filters.location !== 'all' && filters.location !== property.location) {
         return false;
@@ -104,7 +106,7 @@ export async function fetchProperties(filters?: Partial<PropertyFilters>): Promi
 }
 
 export async function triggerScrape(triggeredBy = 'UI'): Promise<ScrapeStatus> {
-  if (!API_BASE_URL) {
+  if (SHOULD_USE_MOCK) {
     const now = new Date().toISOString();
     return {
       runId: `mock-${Date.now()}`,
@@ -114,14 +116,14 @@ export async function triggerScrape(triggeredBy = 'UI'): Promise<ScrapeStatus> {
       errorCount: 0,
     };
   }
-  return request<ScrapeStatus>('/fetchPropertyListings', {
+  return request<ScrapeStatus>('/scrape', {
     method: 'POST',
     body: JSON.stringify({ triggeredBy }),
   });
 }
 
 export async function overrideProperty(hash: string, overrides: Partial<PropertyRecord>): Promise<PropertyRecord> {
-  if (!API_BASE_URL) {
+  if (SHOULD_USE_MOCK) {
     const index = mockProperties.findIndex((item) => item.hash === hash);
     if (index === -1) {
       throw new Error('Property not found');
